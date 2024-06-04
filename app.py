@@ -4,6 +4,9 @@ import uuid
 import requests
 from flask import Flask, request, jsonify, render_template
 from pymongo import MongoClient
+from bson.objectid import ObjectId
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 
 app = Flask(__name__)
 
@@ -76,17 +79,31 @@ def translate_file(access_token, bucket_key, object_name):
     return urn
 
 def upload_to_imgur(image_file):
+    session = requests.Session()
+    retry = Retry(
+        total=5,
+        backoff_factor=0.3,
+        status_forcelist=[500, 502, 503, 504],
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    
     headers = {
         'Authorization': f'Client-ID {IMGUR_CLIENT_ID}'
     }
     files = {
         'image': image_file.read()
     }
-    response = requests.post('https://api.imgur.com/3/upload', headers=headers, files=files)
-    response_data = response.json()
-    if response_data['success']:
-        return response_data['data']['link']
-    else:
+    try:
+        response = session.post('https://api.imgur.com/3/upload', headers=headers, files=files, timeout=30)
+        response_data = response.json()
+        if response_data['success']:
+            return response_data['data']['link']
+        else:
+            return None
+    except requests.exceptions.RequestException as e:
+        print(f"Error uploading to Imgur: {e}")
         return None
 
 @app.route('/')
@@ -108,6 +125,7 @@ def upload_file():
     name = request.form.get('name')
     location = request.form.get('location')
     collection_name = request.form.get('collection')
+    input_link = request.form.get('input_link')
 
     if rvt_file.filename == '':
         return jsonify({'message': 'No selected RVT file'})
@@ -152,7 +170,9 @@ def upload_file():
             'location': location,
             'urn': urn,
             'filename': rvt_filename,
-            'linkanh': image_url
+            'linkanh': image_url,
+            'input_link': input_link,  # Thêm đường dẫn đầu vào của file từ form
+            'model_3d_link': f'https://viewer.autodesk.com/viewers/latest/viewer3D.html?urn={urn}'  # Thêm đường dẫn model 3D
         }
         selected_collection.insert_one(doc)
 
@@ -160,6 +180,42 @@ def upload_file():
 
     except Exception as e:
         return jsonify({'message': str(e)}), 500
+
+@app.route('/collection/<collection_name>/documents', methods=['GET'])
+def get_documents(collection_name):
+    limit = int(request.args.get('limit', 10))
+    skip = int(request.args.get('skip', 0))
+    search_query = request.args.get('search', '')
+
+    collection = db[collection_name]
+    query = {'$or': [{'name': {'$regex': search_query, '$options': 'i'}}, {'location': {'$regex': search_query, '$options': 'i'}}]} if search_query else {}
+    documents = list(collection.find(query).skip(skip).limit(limit))
+
+    for doc in documents:
+        doc['_id'] = str(doc['_id'])
+
+    return jsonify(documents)
+
+@app.route('/collection/<collection_name>/document/<document_id>', methods=['PUT'])
+def edit_document(collection_name, document_id):
+    data = request.json
+    collection = db[collection_name]
+    result = collection.update_one({'_id': ObjectId(document_id)}, {'$set': data})
+
+    if result.matched_count == 0:
+        return jsonify({'message': 'Document not found'}), 404
+
+    return jsonify({'message': 'Document updated successfully'})
+
+@app.route('/collection/<collection_name>/document/<document_id>', methods=['DELETE'])
+def delete_document(collection_name, document_id):
+    collection = db[collection_name]
+    result = collection.delete_one({'_id': ObjectId(document_id)})
+
+    if result.deleted_count == 0:
+        return jsonify({'message': 'Document not found'}), 404
+
+    return jsonify({'message': 'Document deleted successfully'})
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
