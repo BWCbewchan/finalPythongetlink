@@ -185,7 +185,7 @@
         "kind": 2,
         "importPath": "app",
         "description": "app",
-        "peekOfCode": "def delete_document(collection_name, document_id):\n    collection = db[collection_name]\n    result = collection.delete_one({'_id': ObjectId(document_id)})\n    if result.deleted_count == 0:\n        return jsonify({'message': 'Document not found'}), 404\n    return jsonify({'message': 'Document deleted successfully'})\nif __name__ == '__main__':\n    app.run(debug=True, host='0.0.0.0', port=5000)",
+        "peekOfCode": "def delete_document(collection_name, document_id):\n    collection = db[collection_name]\n    result = collection.delete_one({'_id': ObjectId(document_id)})\n    if result.deleted_count == 0:\n        return jsonify({'message': 'Document not found'}), 404\n    return jsonify({'message': 'Document deleted successfully'})\nif __name__ == '__main__':\n    app.run(debug=True, port=5000)",
         "detail": "app",
         "documentation": {}
     },

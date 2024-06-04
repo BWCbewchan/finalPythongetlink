@@ -218,4 +218,4 @@ def delete_document(collection_name, document_id):
     return jsonify({'message': 'Document deleted successfully'})
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, port=5000)
